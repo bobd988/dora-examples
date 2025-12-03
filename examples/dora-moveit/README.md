@@ -11,7 +11,7 @@ Dora-MoveIt implements the core components of a motion planning pipeline:
 │                        Dora-MoveIt Architecture                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│   demo_node (UI/Controller)                                     │
+│   motion_commander / demo_node (Controller)                     │
 │       │                                                          │
 │       ├──► planning_scene_op (Scene Manager)                    │
 │       │         │                                                │
@@ -45,7 +45,7 @@ Dora-MoveIt implements the core components of a motion planning pipeline:
 - **🔍 Collision Check Operator** (`collision_check_op.py`): Collision checking as a service
 - **🗺️ OMPL Planner** (`planner_ompl_with_collision_op.py`): RRT/RRT-Connect with embedded collision
 - **🎬 Planning Scene** (`planning_scene_op.py`): Central scene manager (like MoveIt's PlanningScene)
-- **📊 Demo Node** (`demo_node.py`): Interactive demonstration
+- **🤖 MuJoCo Integration** (`dataflow_mujoco.yml`): Test with 3D robot simulation
 
 ## 🚀 Quick Start
 
@@ -56,7 +56,30 @@ cd examples/dora-moveit
 pip install -r requirements.txt
 ```
 
-### Run the Demo
+## 🧪 Testing Options
+
+### Option 1: MuJoCo Integration (⭐ Recommended - 3D Visualization)
+
+Test with the Panda robot in MuJoCo simulator:
+
+```bash
+# Install dora-mujoco node
+pip install -e ../../node-hub/dora-mujoco
+
+# Run with MuJoCo
+dora build dataflow_mujoco.yml
+dora start dataflow_mujoco.yml
+```
+
+**What you'll see**: MuJoCo window with Panda robot executing pick-and-place motions with collision avoidance.
+
+**MuJoCo Demo Flow**:
+1. 🎬 MuJoCo window opens with Panda robot
+2. 📦 Obstacle (box) added to the scene
+3. 🗺️ Planner generates collision-free paths
+4. 🤖 Robot executes pick-and-place sequence
+
+### Option 2: Basic Demo (Terminal Only)
 
 ```bash
 # Build and start the dataflow
@@ -64,8 +87,7 @@ dora build dataflow.yml
 dora start dataflow.yml
 ```
 
-### Expected Output
-
+**Expected Output**:
 ```
 ============================================================
        Dora-MoveIt Demo - Mini Motion Planning Framework
@@ -101,19 +123,43 @@ Demo will run through all components automatically
 ✅ Demo complete! All Dora-MoveIt components tested.
 ```
 
+### Option 3: Rerun Visualization
+
+```bash
+# Install rerun
+pip install rerun-sdk
+
+# Add rerun node to dataflow for real-time visualization
+# (See examples/rerun-viewer for reference)
+```
+
+### Option 4: ROS2/RViz (If ROS2 Installed)
+
+```bash
+# Use cxx-ros2-dataflow pattern
+# Publish joint states to /joint_states topic
+# View in RViz with robot_description URDF
+```
+
 ## 📁 File Structure
 
 ```
 dora-moveit/
-├── dataflow.yml                    # Dora dataflow configuration
-├── collision_lib.py                # Core collision detection library
-├── ik_op.py                        # Inverse Kinematics operator
-├── collision_check_op.py           # Collision checking operator
+├── dataflow.yml                       # Basic demo (terminal)
+├── dataflow_mujoco.yml                # MuJoCo integration ⭐
+│
+├── collision_lib.py                   # Core collision library (shared)
+├── ik_op.py                           # Inverse Kinematics operator
+├── collision_check_op.py              # Collision checking operator
 ├── planner_ompl_with_collision_op.py  # OMPL motion planner
-├── planning_scene_op.py            # Planning scene manager
-├── demo_node.py                    # Interactive demo
-├── requirements.txt                # Python dependencies
-└── README.md                       # This file
+├── planning_scene_op.py               # Scene manager
+│
+├── demo_node.py                       # Basic demo controller
+├── motion_commander.py                # MuJoCo test controller ⭐
+├── trajectory_executor.py             # Trajectory execution ⭐
+│
+├── requirements.txt                   # Python dependencies
+└── README.md                          # This file
 ```
 
 ## 🔌 Component Details
@@ -165,6 +211,20 @@ Central scene manager (like MoveIt's PlanningScene):
 - Handles attached objects (pick/place)
 - Broadcasts scene updates to all operators
 
+### trajectory_executor.py (MuJoCo Integration)
+
+Trajectory execution node:
+- Receives planned trajectories from planner
+- Interpolates between waypoints
+- Sends joint commands to MuJoCo
+
+### motion_commander.py (MuJoCo Integration)
+
+High-level motion commander:
+- Sends planning requests
+- Manages pick-and-place sequences
+- Coordinates scene and robot state
+
 ## 🎮 Usage Examples
 
 ### Add an Obstacle
@@ -211,6 +271,7 @@ node.send_output("ik_request", pa.array(target_pose, type=pa.float32()))
 | IK | KDL/IKFast/etc | Numerical solver |
 | Collision | FCL/Bullet | Custom geometric |
 | Communication | ROS topics/services | Dora channels |
+| Simulation | Gazebo/RViz | MuJoCo |
 
 ## 🔧 Extending
 
@@ -221,7 +282,7 @@ Modify `ik_op.py`:
 ```python
 class MyIKSolver:
     def solve(self, request: IKRequest) -> IKResult:
-        # Your IK implementation
+        # Your IK implementation (PyKDL, ikfast, etc.)
         pass
 
 # Use in IKOperator
@@ -249,6 +310,20 @@ def mesh_mesh_collision(mesh1, mesh2, margin=0.0):
     pass
 ```
 
+### Connect to Different Simulator
+
+Create new dataflow (e.g., `dataflow_pybullet.yml`):
+
+```yaml
+nodes:
+  - id: pybullet_sim
+    path: pybullet_node.py
+    inputs:
+      control_input: trajectory_executor/joint_commands
+    outputs:
+      - joint_positions
+```
+
 ## 🎯 Design Principles
 
 1. **Modularity**: Each operator is independent and reusable
@@ -256,18 +331,20 @@ def mesh_mesh_collision(mesh1, mesh2, margin=0.0):
 3. **Collision First**: `collision_lib.py` is shared across operators
 4. **MoveIt Patterns**: Follows MoveIt's architectural patterns
 5. **Pluggable**: Easy to swap IK solvers, planners, collision engines
+6. **Simulator Agnostic**: Can work with MuJoCo, PyBullet, ROS/Gazebo
 
 ## 📚 References
 
 - [MoveIt 2 Documentation](https://moveit.picknik.ai/main/)
 - [OMPL Library](https://ompl.kavrakilab.org/)
 - [Dora-rs Documentation](https://github.com/dora-rs/dora)
+- [MuJoCo Documentation](https://mujoco.readthedocs.io/)
 
 ## 🤝 Contributing
 
 This is a demonstration project. For production use, consider:
 - Using FCL or Bullet for collision detection
 - Integrating with URDF robot models
-- Using proper FK from robot kinematics
-- Adding trajectory interpolation and smoothing
-
+- Using proper FK from robot kinematics (pinocchio, PyKDL)
+- Adding trajectory time parameterization (TOPP-RA)
+- Integrating with real robot hardware drivers
